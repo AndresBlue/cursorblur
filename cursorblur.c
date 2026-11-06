@@ -242,7 +242,23 @@ static int load_sprite(Sprite *s, HCURSOR c) {
     SelectObject(dc, hw);                DrawIconEx(dc, 0, 0, c, w, h, 0, NULL, DI_NORMAL);
     SelectObject(dc, old);
     free(s->px); s->px = malloc(w * h * 4);
-    for (int i = 0; i < w * h; i++) s->px[i] = from_bw(blk[i], wht[i]);
+    // Inverting (XOR) pixels, like the I-beam's, flip whatever is under them. A layered window can't do
+    // that, and as plain white they vanished on white text fields: draw them black with a white outline.
+    unsigned char *inv = calloc(w * h, 1);
+    for (int i = 0; i < w * h; i++) {
+        inv[i] = (int)(blk[i] >> 8 & 255) > (int)(wht[i] >> 8 & 255) + 64; // lighter on black than on white
+        s->px[i] = inv[i] ? 0xff000000 : from_bw(blk[i], wht[i]);
+    }
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            if (inv[y * w + x] || (s->px[y * w + x] >> 24) >= 128) continue;
+            int edge = 0;
+            for (int dy = -1; dy <= 1 && !edge; dy++)
+                for (int dx = -1; dx <= 1 && !edge; dx++)
+                    edge = y + dy >= 0 && y + dy < h && x + dx >= 0 && x + dx < w && inv[(y + dy) * w + x + dx];
+            if (edge) s->px[y * w + x] = 0xffffffff;
+        }
+    free(inv);
     DeleteObject(hb); DeleteObject(hw); DeleteDC(dc);
     s->id = c; s->w = w; s->h = h; s->hx = ii.xHotspot; s->hy = ii.yHotspot;
     return 1;
